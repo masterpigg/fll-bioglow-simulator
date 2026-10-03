@@ -4,6 +4,7 @@ import { programToJson, jsonToProgram } from './blocks-json.js';
 import { createWorkspace, registerNames } from './workspace.js';
 import { Sim, normalizeConfig, LOOSE_DEFAULTS, inside, calibrateWheel, calibrateTrack, calibrateTop } from './sim.js';
 import { drawRobot } from './robot-view.js';
+import { photoSampler } from './mat-photo.js';
 import { importProject, exportLlsp3 } from './spike-io.js';
 import { parseRepo, listProjects, fetchProject } from './github.js';
 import { shareUrl, decodeShare, codeFromHash, LONG_LINK, robotUrl, robotCodeFromHash, decodeRobot } from './share.js';
@@ -343,13 +344,30 @@ $('hints').onchange = (e) => { state.hints = e.target.checked; save(); drawField
 $('sides').onchange = (e) => { state.showSides = e.target.checked; save(); drawField(); };
 $('grid').onchange = (e) => { state.grid = e.target.checked; save(); drawField(); };
 
+// With the photo shown, the color sensor reads the photo under it. Its pixels load once in the
+// background; until then (or if the browser won't share them) it sees the plain mat's colors.
+let photoSample = null;
+const matImg = new Image();
+matImg.onload = () => {
+  try {
+    const w = matImg.naturalWidth, h = matImg.naturalHeight, c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(matImg, 0, 0);
+    photoSample = photoSampler(g.getImageData(0, 0, w, h).data, w, h, FW, FH);
+  } catch (e) { return; }
+  setMat(state.mat); drawField();
+};
+matImg.src = 'assets/mat.jpg';
+
 function setMat(look) {
   state.mat = look;
+  sim.matPhoto = look === 'photo' ? photoSample : null;
+  sim.sens = sim.readSensors(sim.pose);
   refs.photo.style.display = look === 'photo' ? '' : 'none';
   refs.plain.style.display = look === 'photo' ? 'none' : '';
   document.querySelectorAll('#mat-style button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mat === look)));
 }
-$('mat-style').addEventListener('click', (e) => { const b = e.target.closest('[data-mat]'); if (b) { setMat(b.dataset.mat); save(); } });
+$('mat-style').addEventListener('click', (e) => { const b = e.target.closest('[data-mat]'); if (b) { setMat(b.dataset.mat); save(); drawField(); } });
 
 function renderLog() { $('log').innerHTML = sim.logLines.map(l => `<div>${esc(l)}</div>`).join(''); }
 
