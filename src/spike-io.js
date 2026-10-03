@@ -238,11 +238,6 @@ export function convertProject(proj) {
 
 // ---------- export ----------
 
-// Stage and sprite costume. Scratch names assets by the md5 of their bytes, and an empty
-// file isn't a valid SVG, so this is a tiny blank picture (md5 checked in the tests).
-export const BLANK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2" viewBox="0 0 2 2"/>';
-export const BLANK_SVG_MD5 = '75648bfbdf238924640b4f84bfe4d452';
-
 // Program tree -> Scratch 3 project.json. Gray (unsupported) blocks are dropped.
 export function buildProject(prog) {
   const blocks = {}; let n = 0, dropped = 0;
@@ -339,11 +334,12 @@ export function buildProject(prog) {
     argKinds = {};
   });
 
-  const costume = (name) => ({ assetId: BLANK_SVG_MD5, name, bitmapResolution: 1, md5ext: BLANK_SVG_MD5 + '.svg', dataFormat: 'svg', rotationCenterX: 1, rotationCenterY: 1 });
+  const EMPTY = 'd41d8cd98f00b204e9800998ecf8427e'; // md5 of an empty file
+  const costume = (name, cx, cy) => ({ assetId: EMPTY, name, bitmapResolution: 1, md5ext: EMPTY + '.svg', dataFormat: 'svg', rotationCenterX: cx, rotationCenterY: cy });
   const project = {
     targets: [
-      { isStage: true, name: 'Stage', variables: {}, lists: {}, broadcasts, blocks: {}, comments: {}, currentCostume: 0, costumes: [costume('backdrop1')], sounds: [], volume: 100, layerOrder: 0, tempo: 60, videoTransparency: 50, videoState: 'on', textToSpeechLanguage: null },
-      { isStage: false, name: 'BioGlowSim', variables, lists, broadcasts: {}, blocks, comments: {}, currentCostume: 0, costumes: [costume('costume1')], sounds: [], volume: 100, layerOrder: 1, visible: true, x: 0, y: 0, size: 100, direction: 90, draggable: false, rotationStyle: 'all around' }
+      { isStage: true, name: 'Stage', variables: {}, lists: {}, broadcasts, blocks: {}, comments: {}, currentCostume: 0, costumes: [costume('backdrop1', 47, 55)], sounds: [], volume: 100, layerOrder: 0, tempo: 60, videoTransparency: 50, videoState: 'on', textToSpeechLanguage: null },
+      { isStage: false, name: 'BioGlowSim', variables, lists, broadcasts: {}, blocks, comments: {}, currentCostume: 0, costumes: [costume('costume1', 240, 180)], sounds: [], volume: 100, layerOrder: 1, visible: true, x: 0, y: 0, size: 100, direction: 90, draggable: false, rotationStyle: 'all around' }
     ],
     monitors: [],
     extensions: ['flipperevents', 'flippermove', 'flippermotor', 'flippersensors', 'flipperlight', 'flippersound'],
@@ -357,11 +353,11 @@ export function exportLlsp3(program, name) {
   const now = new Date().toISOString();
   const sb3 = makeZip([
     { name: 'project.json', data: JSON.stringify(project) },
-    { name: BLANK_SVG_MD5 + '.svg', data: BLANK_SVG }
+    { name: 'd41d8cd98f00b204e9800998ecf8427e.svg', data: new Uint8Array(0) }
   ]);
   const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); });
   const manifest = {
-    type: 'word-blocks', autoDelete: false, created: now, id: uuid, lastsaved: now, size: sb3.length, name,
+    type: 'word-blocks', autoDelete: false, created: now, id: uuid, lastsaved: now, size: 0, name,
     slotIndex: 0, workspaceX: 0, workspaceY: 0, zoomLevel: 0.675, showAllBlocks: false, version: 38, hardware: {},
     extensions: project.extensions,
     state: { playMode: 'download', canvasDrawerTab: 'monitorTab', canvasDrawerOpen: false, hasMonitors: false },

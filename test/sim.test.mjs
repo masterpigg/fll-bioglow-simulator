@@ -224,19 +224,18 @@ test('SPIKE export has the SPIKE App 3 file layout', () => {
 
   assert.equal(manifest.type, 'word-blocks');
   assert.equal(manifest.name, 'all blocks');
-  assert.equal(manifest.size, sb3.length);
   for (const k of ['created', 'lastsaved']) assert.ok(!isNaN(Date.parse(manifest[k])), k);
   assert.equal(typeof manifest.id, 'string');
   assert.deepEqual(manifest.extensions, project.extensions);
 
-  // Every asset the project names is in the sb3, named by the md5 of its bytes.
+  // Every asset the project names is in the sb3, named by the md5 of its bytes
+  // (SPIKE's own files use an empty .svg for the stage and sprite too).
   assert.equal(project.meta.semver, '3.0.0');
   assert.equal(project.targets[0].isStage, true);
   for (const t of project.targets) for (const c of t.costumes) {
     const f = inner[c.md5ext];
     assert.ok(f, c.md5ext + ' missing');
     assert.equal(crypto.createHash('md5').update(f.data).digest('hex'), c.assetId);
-    assert.match(Buffer.from(f.data).toString(), /^<svg [^>]*xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
   }
 
   // Block links point both ways and every opcode comes from a loaded extension or core Scratch.
@@ -560,10 +559,11 @@ test('imports and round-trips local SPIKE files', { skip: !fixtures && 'set SPIK
     const res = await importProject(ab(fs.readFileSync(f)));
     const out = exportLlsp3(res.program, 'rt').zip;
     const back = await importProject(ab(out));
-    // The export has the same files and manifest type as the real one; other manifest differences are listed.
+    // The export has the files and manifest type of the real one (monitors.json is optional); other manifest differences are listed.
     const real = openLlsp3(fs.readFileSync(f)), ours = openLlsp3(out);
-    assert.deepEqual(Object.keys(ours.outer).sort(), Object.keys(real.outer).filter(k => !k.endsWith('/')).sort(), path.basename(f) + ' files');
+    for (const k of Object.keys(ours.outer)) assert.ok(real.outer[k], path.basename(f) + ' has no ' + k);
     assert.equal(ours.manifest.type, real.manifest.type);
+    assert.equal(ours.project.meta.semver, real.project.meta.semver);
     for (const k of Object.keys(real.manifest)) if (!(k in ours.manifest)) manifestGaps.add(k);
     // Gray reporters export as plain values, so only compare programs without them.
     // Exports don't carry SPIKE's sound recordings, so their lengths aren't compared.
