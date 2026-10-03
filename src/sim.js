@@ -1,7 +1,7 @@
 // Robot simulation: a two-wheel SPIKE Prime drive base on the BioGlow mat.
 // Heading is in degrees, clockwise from "north" (away from the home wall).
 
-import { FW, FH, HOME_R, MODELS, DOCKS, LINES, MATCH_SECONDS, MECHANISMS, APPROACH, APPROACH_TOLERANCE, DEFAULT_APPROACH, DEFAULT_DOCKS } from './field.js';
+import { FW, FH, HOME_R, MODELS, DOCKS, LINES, MATCH_SECONDS, MECHANISMS, APPROACH, APPROACH_TOLERANCE, DEFAULT_APPROACH, DEFAULT_DOCKS, DOCK_NEED } from './field.js';
 
 // Robot-local coordinates: origin at the middle of the wheel axle, x to the right, y forward (mm).
 export const DEFAULT_CONFIG = {
@@ -198,6 +198,8 @@ export class Sim {
     this.mission = { m10a: true, m10b: true, m02: 0, m06: 0, m13: false, m14a: 0 };
     this.mechDone = new Set(); this.holdT = {}; this.contacts = new Map(); this.missed = new Set(); this.contactSpeed = new Map(); this.pushSpeed = null;
     this.resting = {}; this.pullDist = {}; // lift arms lowered onto a model (by port), and how far each model was pulled
+    this.onTop = {}; // the model each lift arm last came down on: raising the arm off it is not a lift
+    this.lastHits = new Set(); // touches from the step before, to tell a new touch from a held one
   }
 
   // Remember how the robot touched a model this step: 'push' (with the push direction and speed),
@@ -220,16 +222,19 @@ export class Sim {
   // Does a push in one of these directions count for mechanism m?
   rightSide(m, dirs) {
     const side = APPROACH[this.approach[m.model || 'dock:' + m.dock]];
-    if (!side || m.how !== 'push') return true;
+    if (!side || m.how !== 'push' || m.bad) return true;
     const c = Math.cos(APPROACH_TOLERANCE * Math.PI / 180);
     return dirs.some(d => d[0] * side[0] + d[1] * side[1] >= c);
   }
 
   runMechanisms(dt) {
     const now = this.contacts, speeds = this.contactSpeed; this.contacts = new Map(); this.contactSpeed = new Map();
+    const before = new Set(this.mechDone), last = this.lastHits; this.lastHits = new Set(now.keys());
     MECHANISMS.forEach((m, i) => {
       const k = m.model || 'dock:' + m.dock;
       let hit = m.how === 'touch' ? [...now.keys()].some(c => c.startsWith(k + '|')) : now.has(k + '|' + m.how);
+      // A second action needs the first one done in an earlier step, then a new touch.
+      if (hit && m.again && (!before.has(MECHANISMS.findIndex(x => x.id === m.again)) || last.has(k + '|' + m.how))) hit = false;
       if (hit && m.pull && (this.pullDist[k] || 0) < m.pull) hit = false; // not pulled far enough yet
       if (hit && m.fast && (speeds.get(k + '|lift') || 0) < m.fast) {
         hit = false; // lifted too slowly: it rises a little and falls back
@@ -246,9 +251,10 @@ export class Sim {
       for (const key of m.sets || []) this.mission[key] = true;
       for (const key of m.clears || []) this.mission[key] = false;
       const model = this.objects.find(o => o.key === m.model);
-      if (model) { if (m.how === 'touch') model.hurt = true; else model.done = true; }
+      if (model) { if (m.how === 'touch' || m.bad) model.hurt = true; else model.done = true; }
       if (m.lifts) { const o = this.objects.find(x => x.key === m.lifts); if (o) o.lifted = true; }
-      if (m.seeds && model) this.popSeeds(model, m.seeds);
+      if (m.seeds && model) this.mission.m02 += this.popSeeds(model, m.seeds);
+      if (m.drops && model) this.popSeeds(model, m.drops);
       if (m.fragments) {
         // Slow and steady keeps the leaf fragments in the nest; a fast push scatters some.
         const speed = speeds.get(k + '|push') || 0;
@@ -264,9 +270,11 @@ export class Sim {
     const inDock = (p, name) => { const d = dockOf(name); return !!d && inside([p.x, p.y], d); };
     this.mission.m13 = this.objects.some(o => o.loose && o.id === 'keystone' && inDock(o, 'M13'));
     this.mission.m14a = this.objects.filter(o => o.seed && inDock(o, 'M14')).length;
+    const need = DOCK_NEED[Object.keys(this.docks).find(d => this.docks[d] === 'M15')];
+    this.mission.m15d = !!(need && this.mission[need]);
   }
 
-  // Seeds fly off the stalk and land around it as loose pieces the robot can collect.
+  // Seeds fly off the model and land around it as loose pieces the robot can collect. Returns how many landed.
   popSeeds(model, count) {
     let n = 0;
     for (let a = 0; a < 360 && n < count; a += 40) {
@@ -275,7 +283,7 @@ export class Sim {
       if (this.objectBlocked(seed) || this.solidBoxes(this.pose).some(b => overlap(b, seed))) continue;
       this.objects.push(seed); n++;
     }
-    this.mission.m02 += n;
+    return n;
   }
 
   // Robot-local point (x right, y forward from the axle middle) to field coordinates.
@@ -361,7 +369,8 @@ export class Sim {
         const reach = Object.assign({}, hook, { w: hook.w + 2 * HOOK, h: hook.h + 2 * HOOK });
         // How fast the arm itself rises, as a % of top speed (gearing included).
         this.pushSpeed = Math.round(Math.abs(this.motorSpeed[port] ?? 75) * Math.abs(arm.ratio || 1));
-        for (const o of this.objects) if (!o.lifted && !o.loose && overlap(reach, o)) this.touch(o, 'lift');
+        for (const o of this.objects) if (!o.lifted && !o.loose && o !== this.onTop[port] && overlap(reach, o)) this.touch(o, 'lift');
+        if (this.onTop[port] && !overlap(reach, this.onTop[port])) delete this.onTop[port];
         this.pushSpeed = null;
       }
       if (g.tilt > was.tilt) delete this.resting[port]; // raising the arm unhooks it
@@ -376,7 +385,8 @@ export class Sim {
     for (const q of corners(box)) if (q[0] < 0 || q[0] > FW || q[1] < 0 || q[1] > FH) return 'the wall';
     if (this.cfg.collide) for (const o of this.objects) if (!o.lifted && !(rising && o.under) && overlap(box, o)) {
       this.touch(o, 'press');
-      if (!o.loose && !o.dock) this.resting[port] = o; // resting on the model: driving away now pulls it
+      this.onTop[port] = o;
+      if (!o.loose) this.resting[port] = o; // resting on the model: driving away now pulls it
       return o.name;
     }
     return null;
@@ -389,9 +399,10 @@ export class Sim {
       const d0 = Math.hypot(p0.x - o.x, p0.y - o.y), d1 = Math.hypot(p1.x - o.x, p1.y - o.y);
       if (d1 < d0 - 0.5) { delete this.resting[port]; continue; }
       if (d1 <= d0) continue;
-      this.pullDist[o.key] = (this.pullDist[o.key] || 0) + (d1 - d0);
+      const k = o.dock ? 'dock:' + o.holds : o.key;
+      this.pullDist[k] = (this.pullDist[k] || 0) + (d1 - d0);
       this.touch(o, 'pull');
-      if (this.pullDist[o.key] >= PULL_MAX) delete this.resting[port];
+      if (this.pullDist[k] >= PULL_MAX) delete this.resting[port];
     }
   }
 

@@ -100,29 +100,38 @@ export function totalScore(score, tokens, inspection) {
 // "fragments" scores that many pieces for a slow push and fewer for a fast one (M06's leaves scatter).
 // "pull" needs the robot to drag the hooked arm that many mm.
 // "fast" needs the arm to rise at least that fast (% of top speed, after gearing), or the part falls back.
+// "again" needs that mechanism done first, then a new touch of the same kind (back off and do it again).
+// "bad" marks a touch that costs points (the model shows red and the tag says not to do it).
+// "drops" lets that many seeds fall off as loose pieces without counting them for M02.
 // A push can also be required to come from one side of the mat (see APPROACH); the default is any side.
 export const MECHANISMS = [
   { id: 'm01-pilot', model: 'm01pilot', how: 'push', sets: ['m01a'], says: 'M01: the pilot launched the drone.', lifts: 'm01drone' },
   { id: 'm01-map', model: 'm01map', how: 'press', sets: ['m01b'], says: 'M01: the LiDAR map flipped over.' },
   { id: 'm02-stalk', model: 'm02', how: 'push', seeds: 3, says: 'M02: the seeds popped off the stalk.' },
   { id: 'm03-rock', model: 'm03', how: 'push', sets: ['m03a'], says: 'M03: the research flag is down.' },
+  { id: 'm03-back', model: 'm03', how: 'push', again: 'm03-rock', sets: ['m03b'], says: 'M03: the rock flipped back to its starting position.' },
   { id: 'm04-leaf', model: 'm04', how: 'press', sets: ['m04a'], says: 'M04: a leaf came off the nest.' },
+  { id: 'm04-leaf2', model: 'm04', how: 'press', again: 'm04-leaf', sets: ['m04b'], says: 'M04: a second leaf came off, and the katydid stayed put.' },
+  { id: 'm04-katydid', model: 'm04', how: 'push', bad: true, sets: ['m04x'], says: 'M04: the katydid got knocked out of the leaf habitat.' },
   { id: 'm05-part', model: 'm05', how: 'push', sets: ['m05a'], says: 'M05: the plant root is partly extended.' },
   { id: 'm05-full', model: 'm05', how: 'push', hold: 1, sets: ['m05b'], clears: ['m05a'], says: 'M05: the plant root is completely extended.' },
   { id: 'm06-ant', model: 'm06', how: 'push', fragments: 3, says: 'M06: the ant reached the nest.' },
   { id: 'm07-mycelium', model: 'm07', how: 'pull', pull: 40, sets: ['m07a'], says: 'M07: the mycelium is extended.' },
   { id: 'm08-vine', model: 'm0809', how: 'press', sets: ['m08'], says: 'M08: the vine is down on the mat.' },
-  { id: 'm09-platform', model: 'm0809', how: 'push', sets: ['m09a'], says: 'M09: the research platform is raised.' },
+  { id: 'm09-platform', model: 'm0809', how: 'push', sets: ['m09a', 'm09b', 'm09c'], drops: 1, says: 'M09: the research platform is raised; the camera trap and the seed dropped.' },
   { id: 'm10-spider', model: 'm10spider', how: 'touch', clears: ['m10a'], says: 'M10: the spider habitat was disturbed.' },
   { id: 'm10-snail', model: 'm10snail', how: 'touch', clears: ['m10b'], says: 'M10: the snail habitat was disturbed.' },
   { id: 'm11-cover', model: 'm11', how: 'push', sets: ['m11'], says: 'M11: the root cover is down.' },
   { id: 'm12-cane', model: 'm12cane', how: 'lift', fast: 70, lifts: 'm12cane', sets: ['m12a'], says: 'M12: the cane flipped up against the tree.' },
-  { id: 'm15-canopy', dock: 'M15', how: 'press', sets: ['m15a'], says: 'M15: the nesting canopy is raised.' },
+  { id: 'm15-canopy', dock: 'M15', how: 'lift', sets: ['m15a'], says: 'M15: the nesting canopy is raised.' },
+  { id: 'm15-skylight', dock: 'M15', how: 'pull', pull: 40, sets: ['m15b'], says: 'M15: the garden skylight is pulled completely in.' },
   { id: 'm15-hatch', dock: 'M15', how: 'push', sets: ['m15c'], says: 'M15: the compost hatch is open.' }
 ];
 // Score items the simulation can fill in. M10 starts complete and is lost when touched; M06 counts leaf fragments;
-// M02, M13 and M14 are counted from where seeds and the keystone species end up.
-export const AUTO_KEYS = ['m01a', 'm01b', 'm02', 'm03a', 'm04a', 'm05a', 'm05b', 'm06', 'm07a', 'm08', 'm09a', 'm10a', 'm10b', 'm11', 'm12a', 'm13', 'm14a', 'm15a', 'm15c'];
+// M02, M13 and M14 are counted from where seeds and the keystone species end up; M15's bonus from which dock it sits on.
+export const AUTO_KEYS = ['m01a', 'm01b', 'm02', 'm03a', 'm03b', 'm04a', 'm04b', 'm04x', 'm05a', 'm05b', 'm06', 'm07a', 'm08', 'm09a', 'm09b', 'm09c', 'm10a', 'm10b', 'm11', 'm12a', 'm13', 'm14a', 'm15a', 'm15b', 'm15c', 'm15d'];
+// M15's environmental bonus: the item each dock needs most.
+export const DOCK_NEED = { mine: 'm15a', city: 'm15b', farm: 'm15c' };
 
 // Approach sides for pushes: the direction the robot comes from, as compass points on the mat
 // (north = the back wall, south = the home wall, west = the red home side, east = the blue home side).

@@ -8,7 +8,7 @@ import { Sim, calibrateWheel, calibrateTrack, calibrateTop } from '../src/sim.js
 import { flatToAst, SPEC, node, lit } from '../src/blocks.js';
 import { programToJson, jsonToProgram } from '../src/blocks-json.js';
 import { importProject, exportLlsp3, makeZip, readZip, buildProject } from '../src/spike-io.js';
-import { MISSIONS, totalScore } from '../src/field.js';
+import { MISSIONS, totalScore, missionPoints } from '../src/field.js';
 
 const prog = (list) => flatToAst(list.map(([t, o]) => Object.assign({ t }, o)));
 const runToEnd = (sim, program, limit = 60) => { sim.run(program); let t = 0; while (sim.running && t < limit) { sim.advance(0.02); t += 0.02; } return t; };
@@ -634,4 +634,64 @@ test('M07: arm up, drive in, lower the arm onto it, drive back: the mycelium ext
   const t = new Sim({ arms: [arm] }, { x: 1582, y: 760, h: 0 }, []);
   runToEnd(t, prog([['move', { dir: 'forward', val: '20', unit: 'cm' }], ['move', { dir: 'back', val: '10', unit: 'cm' }]]));
   assert.notEqual(t.mission.m07a, true);
+});
+
+test('M03: push again to flip the rock back for the bonus; a held push counts once', () => {
+  const once = new Sim({}, { x: 300, y: 658, h: -90 }, []);
+  runToEnd(once, prog([['move', { dir: 'forward', val: '20', unit: 'cm' }]]));
+  assert.equal(once.mission.m03a, true);
+  assert.notEqual(once.mission.m03b, true);
+  const twice = new Sim({}, { x: 300, y: 658, h: -90 }, []);
+  runToEnd(twice, prog([['move', { dir: 'forward', val: '20', unit: 'cm' }], ['move', { dir: 'back', val: '5', unit: 'cm' }], ['move', { dir: 'forward', val: '10', unit: 'cm' }]]));
+  assert.equal(twice.mission.m03b, true);
+});
+
+test('M04: press once for a leaf, again for the second; bumping it knocks the katydid out', () => {
+  const arm = { id: 'a1', port: 'E', motion: 'lift', x: 0, y: 100, dir: 'front', len: 90, rest: 'up', cw: 'lowers', ratio: 1 };
+  const lower = ['motor', { port: 'E', dir: 'clockwise', val: '90', unit: 'degrees' }], raise = ['motor', { port: 'E', dir: 'counterclockwise', val: '90', unit: 'degrees' }];
+  const once = new Sim({ arms: [arm] }, { x: 116, y: 830, h: 0 }, []);
+  runToEnd(once, prog([lower]));
+  assert.equal(once.mission.m04a, true);
+  assert.notEqual(once.mission.m04b, true);
+  const twice = new Sim({ arms: [arm] }, { x: 116, y: 830, h: 0 }, []);
+  runToEnd(twice, prog([lower, raise, lower]));
+  assert.equal(twice.mission.m04b, true);
+  assert.notEqual(twice.mission.m04x, true);
+  const bump = new Sim({ arms: [] }, { x: 116, y: 800, h: 0 }, []);
+  runToEnd(bump, prog([['move', { dir: 'forward', val: '20', unit: 'cm' }]]));
+  assert.equal(bump.mission.m04x, true);
+  assert.ok(bump.objects.find(o => o.key === 'm04').hurt);
+  const m04 = MISSIONS.find(m => m.id === 'M04');
+  assert.equal(missionPoints(m04, { m04a: true, m04b: true, m04x: true }), 0);
+});
+
+test('M09: raising the platform releases the camera trap and a seed, which is not an M02 seed', () => {
+  const s = new Sim({ arms: [] }, { x: 578, y: 800, h: 0 }, []);
+  runToEnd(s, prog([['move', { dir: 'forward', val: '20', unit: 'cm' }]]));
+  assert.equal(s.mission.m09a, true);
+  assert.equal(s.mission.m09b, true);
+  assert.equal(s.mission.m09c, true);
+  assert.equal(s.objects.filter(o => o.seed).length, 1);
+  assert.equal(s.mission.m02, 0);
+});
+
+test('M15: hook and pull the skylight, lift the canopy; the bonus follows the dock', () => {
+  // M15 sits on the farm dock (998, 627) by default, where the compost hatch is the greatest need.
+  const arm = { id: 'a1', port: 'E', motion: 'lift', x: 0, y: 100, dir: 'front', len: 90, rest: 'up', cw: 'lowers', ratio: 1 };
+  const pull = new Sim({ arms: [arm] }, { x: 998, y: 380, h: 0 }, []);
+  runToEnd(pull, prog([['move', { dir: 'forward', val: '20', unit: 'cm' }], ['motor', { port: 'E', dir: 'clockwise', val: '90', unit: 'degrees' }],
+    ['move', { dir: 'back', val: '10', unit: 'cm' }], ['motor', { port: 'E', dir: 'counterclockwise', val: '90', unit: 'degrees' }]]));
+  assert.equal(pull.mission.m15b, true);
+  assert.notEqual(pull.mission.m15a, true, 'raising an arm off the top is not a lift');
+  assert.equal(pull.mission.m15c, true, 'driving into it opened the hatch');
+  assert.equal(pull.mission.m15d, true);
+  const lift = new Sim({ arms: [{ ...arm, rest: 'down', cw: 'raises' }] }, { x: 998, y: 380, h: 0 }, []);
+  runToEnd(lift, prog([['move', { dir: 'forward', val: '20', unit: 'cm' }], ['motorSpeed', { port: 'E', pct: '100' }], ['motor', { port: 'E', dir: 'clockwise', val: '60', unit: 'degrees' }]]));
+  assert.equal(lift.mission.m15a, true);
+  assert.notEqual(lift.mission.m15b, true);
+  const onMine = new Sim({}, { x: 0, y: 0, h: 0 }, []); onMine.docks = { mine: 'M15', farm: 'M13', city: 'M14' };
+  onMine.mission.m15c = true; onMine.runMechanisms(0.01);
+  assert.equal(onMine.mission.m15d, false, 'on the mine dock the canopy is the greatest need');
+  onMine.mission.m15a = true; onMine.runMechanisms(0.01);
+  assert.equal(onMine.mission.m15d, true);
 });

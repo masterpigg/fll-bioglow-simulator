@@ -239,9 +239,11 @@ function actionsOf(o) {
   const acts = [];
   MECHANISMS.forEach((m, i) => {
     if (o.dock ? m.dock !== o.holds : m.model !== o.key) return;
-    const [label, tip] = HOW[m.how];
-    acts.push({ label: m.hold ? `HOLD ${m.hold} S` : label, tip: m.hold ? `Keep pushing for ${m.hold} second${m.hold > 1 ? 's' : ''}.` : tip,
-      result: m.says.replace(/^M\d+: /, ''), done: m.how !== 'touch' && sim.mechDone.has(i), bad: m.how === 'touch' && sim.mechDone.has(i) });
+    const [label, tip] = m.bad ? ['DON’T BUMP', 'Only an arm coming down from above should touch it. Driving or sweeping into it costs points.'] : HOW[m.how];
+    const harm = m.how === 'touch' || m.bad;
+    acts.push({ label: m.hold ? `HOLD ${m.hold} S` : m.again ? label + ' AGAIN' : label,
+      tip: m.hold ? `Keep pushing for ${m.hold} second${m.hold > 1 ? 's' : ''}.` : m.again ? 'Back off, then do it again.' : tip,
+      result: m.says.replace(/^M\d+: /, ''), done: !harm && sim.mechDone.has(i), bad: harm && sim.mechDone.has(i) });
   });
   if (o.dock && o.holds === 'M13') acts.push({ label: 'BRING K', tip: 'Push the keystone species (K) into this dock.', done: sim.mission.m13 });
   if (o.dock && o.holds === 'M14') acts.push({ label: 'BRING SEEDS' + (sim.mission.m14a ? ' ×' + sim.mission.m14a : ''), tip: 'Push seeds into this dock. M02 drops seeds when you push it.', done: sim.mission.m14a > 0 });
@@ -304,7 +306,7 @@ function showMissionCard(o) {
       || '<div class="mc-do">The simulator doesn’t model this one yet: score it yourself on the Score tab.</div>'}
     ${ms.map(m => `<div><span class="mid">${m.id}</span><b>${esc(m.name)}</b> · ${missionPoints(m, state.score)} pts now<ul>${m.items.map(it => `<li class="${state.score[it.k] ? 'done' : ''}">${esc(it.label)} — ${it.zero ? '×0' : it.count ? it.pts + ' each' : it.pts}</li>`).join('')}</ul></div>`).join('')}
     ${dock ? '<div class="fine">Change which model sits here on the Field tab.</div>' : ''}
-    ${MECHANISMS.some(m => m.how === 'push' && (m.model || 'dock:' + m.dock) === modelKey(o)) ? `<details><summary>Coach: which side must the robot push from?</summary>
+    ${MECHANISMS.some(m => m.how === 'push' && !m.bad && (m.model || 'dock:' + m.dock) === modelKey(o)) ? `<details><summary>Coach: which side must the robot push from?</summary>
       <div class="fine">Set this from the real model. A push from any other side does nothing (the log only says “touched, but nothing happened”). Kids only see the direction if “Show approach directions” is on. Saved on this device and included in share links.</div>
       <div class="seg" data-approach="${esc(modelKey(o))}">${Object.entries(SIDE_NAMES).map(([k, label]) => `<button type="button" data-side="${k}" aria-pressed="${(state.approach[modelKey(o)] || 'any') === k}">${esc(label)}</button>`).join('')}</div>
     </details>` : ''}
