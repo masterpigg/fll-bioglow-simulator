@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import crypto from 'node:crypto';
 import { Sim, calibrateWheel, calibrateTrack, calibrateTop } from '../src/sim.js';
 import { flatToAst, SPEC, node, lit } from '../src/blocks.js';
 import { programToJson, jsonToProgram } from '../src/blocks-json.js';
-import { importProject, exportLlsp3, makeZip, buildProject } from '../src/spike-io.js';
+import { importProject, exportLlsp3, makeZip, readZip, buildProject } from '../src/spike-io.js';
 import { MISSIONS, totalScore } from '../src/field.js';
 
 const prog = (list) => flatToAst(list.map(([t, o]) => Object.assign({ t }, o)));
@@ -205,6 +206,60 @@ test('every block survives SPIKE export and re-import', async () => {
   assert.equal(dropped, 0);
   const back = await importProject(ab(zip));
   assert.deepEqual(strip(back.program), strip(all));
+});
+
+// Opens an exported .llsp3 the way the SPIKE App does: outer zip, manifest, inner scratch.sb3, project.json.
+const openLlsp3 = (zip) => {
+  const bytes = (e) => e.method === 8 ? zlib.inflateRawSync(e.data) : Buffer.from(e.data);
+  const outer = readZip(ab(zip)), sb3 = bytes(outer['scratch.sb3']), inner = readZip(ab(sb3));
+  const text = (e) => bytes(e).toString('utf8');
+  return { outer, sb3, inner, manifest: JSON.parse(text(outer['manifest.json'])), project: JSON.parse(text(inner['project.json'])) };
+};
+
+test('SPIKE export has the SPIKE App 3 file layout', () => {
+  const { outer, sb3, inner, manifest, project } = openLlsp3(exportLlsp3(everything(), 'all blocks').zip);
+  assert.deepEqual(Object.keys(outer).sort(), ['icon.svg', 'manifest.json', 'scratch.sb3']);
+  for (const e of [...Object.values(outer), ...Object.values(inner)]) assert.equal(e.method, 0);
+  assert.ok(Buffer.from(outer['icon.svg'].data).toString().startsWith('<svg'));
+
+  assert.equal(manifest.type, 'word-blocks');
+  assert.equal(manifest.name, 'all blocks');
+  assert.equal(manifest.size, sb3.length);
+  for (const k of ['created', 'lastsaved']) assert.ok(!isNaN(Date.parse(manifest[k])), k);
+  assert.equal(typeof manifest.id, 'string');
+  assert.deepEqual(manifest.extensions, project.extensions);
+
+  // Every asset the project names is in the sb3, named by the md5 of its bytes.
+  assert.equal(project.meta.semver, '3.0.0');
+  assert.equal(project.targets[0].isStage, true);
+  for (const t of project.targets) for (const c of t.costumes) {
+    const f = inner[c.md5ext];
+    assert.ok(f, c.md5ext + ' missing');
+    assert.equal(crypto.createHash('md5').update(f.data).digest('hex'), c.assetId);
+    assert.match(Buffer.from(f.data).toString(), /^<svg [^>]*xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
+  }
+
+  // Block links point both ways and every opcode comes from a loaded extension or core Scratch.
+  const core = new Set(['event', 'control', 'operator', 'data', 'procedures', 'argument', 'sound']);
+  const stage = project.targets[0];
+  for (const t of project.targets) for (const [id, b] of Object.entries(t.blocks)) {
+    const ext = b.opcode.split('_')[0];
+    assert.ok(core.has(ext) || project.extensions.includes(ext), b.opcode);
+    if (b.topLevel) { assert.equal(b.parent, null); assert.equal(typeof b.x, 'number'); assert.equal(typeof b.y, 'number'); }
+    else assert.ok(t.blocks[b.parent], id + ' parent');
+    if (b.next) assert.equal(t.blocks[b.next].parent, id, id + ' next');
+    for (const inp of Object.values(b.inputs)) for (const v of inp.slice(1)) {
+      if (typeof v === 'string') assert.equal(t.blocks[v].parent, id, id + ' input');
+      else if (Array.isArray(v) && v[0] === 12) assert.ok(t.variables[v[2]], 'variable ' + v[1]);
+      else if (Array.isArray(v) && v[0] === 13) assert.ok(t.lists[v[2]], 'list ' + v[1]);
+      else if (Array.isArray(v) && v[0] === 11) assert.equal(stage.broadcasts[v[2]], v[1]);
+    }
+    for (const [k, f] of Object.entries(b.fields)) {
+      if (k === 'VARIABLE') assert.ok(t.variables[f[1]], 'variable ' + f[0]);
+      if (k === 'LIST') assert.ok(t.lists[f[1]], 'list ' + f[0]);
+      if (k === 'BROADCAST_OPTION') assert.equal(stage.broadcasts[f[1]], f[0]);
+    }
+  }
 });
 
 test('every block survives the block editor format', () => {
@@ -500,9 +555,16 @@ test('imports and round-trips local SPIKE files', { skip: !fixtures && 'set SPIK
   const walk = (d) => { for (const f of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, f.name); if (f.isDirectory()) walk(p); else if (f.name.endsWith('.llsp3')) files.push(p); } };
   walk(fixtures);
   assert.ok(files.length > 0, 'no .llsp3 files found');
+  const manifestGaps = new Set();
   for (const f of files) {
     const res = await importProject(ab(fs.readFileSync(f)));
-    const back = await importProject(ab(exportLlsp3(res.program, 'rt').zip));
+    const out = exportLlsp3(res.program, 'rt').zip;
+    const back = await importProject(ab(out));
+    // The export has the same files and manifest type as the real one; other manifest differences are listed.
+    const real = openLlsp3(fs.readFileSync(f)), ours = openLlsp3(out);
+    assert.deepEqual(Object.keys(ours.outer).sort(), Object.keys(real.outer).filter(k => !k.endsWith('/')).sort(), path.basename(f) + ' files');
+    assert.equal(ours.manifest.type, real.manifest.type);
+    for (const k of Object.keys(real.manifest)) if (!(k in ours.manifest)) manifestGaps.add(k);
     // Gray reporters export as plain values, so only compare programs without them.
     // Exports don't carry SPIKE's sound recordings, so their lengths aren't compared.
     if (!JSON.stringify(res.program).includes('"noteR"')) assert.deepEqual(strip({ ...back.program, sounds: {} }), strip({ ...res.program, sounds: {} }), path.basename(f));
@@ -510,6 +572,7 @@ test('imports and round-trips local SPIKE files', { skip: !fixtures && 'set SPIK
     runToEnd(sim, res.program, 150);
   }
   console.log(`  checked ${files.length} file(s)`);
+  if (manifestGaps.size) console.log('  manifest keys in SPIKE files but not in exports: ' + [...manifestGaps].join(', '));
 });
 
 test('the block editor ignores loose blocks and reads an empty "if" as false', () => {
