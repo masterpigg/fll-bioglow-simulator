@@ -139,6 +139,7 @@ export class Sim {
     this.pieces = pieces || [];
     this.docks = Object.assign({}, DEFAULT_DOCKS); // which mission model sits on each dock
     this.approach = Object.assign({}, DEFAULT_APPROACH); // model key (or dock:M15) -> side pushes must come from
+    this.matPhoto = null; // ([x, y]) -> { color, reflect } read from the mat photo, or null for the plain mat
     this.logLines = [];
     this.onLog = null;
     this.matchOn = false;
@@ -425,7 +426,9 @@ export class Sim {
     let yaw = p.h - (this.yawZero === undefined ? p.h : this.yawZero);
     yaw = ((yaw % 360) + 540) % 360 - 180;
     if (!c.yawCW) yaw = -yaw;
-    return { color: matColor(sp), spot: sp, dist: t <= 2000 ? Math.max(0, t) / 10 : null, rayLen: Math.min(Math.max(0, t), 2000), origin: o, dirAng, yaw };
+    const ph = this.matPhoto ? this.matPhoto(sp) : null;
+    const color = this.matPhoto ? (ph ? ph.color : 'none') : matColor(sp);
+    return { color, reflect: ph ? ph.reflect : REFLECT[color] ?? 0, spot: sp, dist: t <= 2000 ? Math.max(0, t) / 10 : null, rayLen: Math.min(Math.max(0, t), 2000), origin: o, dirAng, yaw };
   }
 
   // ---------- running programs ----------
@@ -561,11 +564,11 @@ export class Sim {
       case 'length': return S(e.a).length;
       case 'contains': return S(e.a).toLowerCase().includes(S(e.b).toLowerCase());
       case 'isColor': return e.port === cfg.colorPort && s.color === e.color;
-      case 'isReflection': return e.port === cfg.colorPort && cmp(REFLECT[s.color] ?? 0, e.cmp, N(e.val));
+      case 'isReflection': return e.port === cfg.colorPort && cmp(s.reflect, e.cmp, N(e.val));
       case 'isDistance': return e.port === cfg.distPort && (s.dist === null ? e.cmp === '>' : cmp(s.dist, e.cmp, N(e.val)));
       case 'isPressed': return e.port === cfg.forcePort && this.pressed();
       case 'color': return e.port === cfg.colorPort ? (COLOR_ID[s.color] ?? -1) : -1;
-      case 'reflection': return e.port === cfg.colorPort ? (REFLECT[s.color] ?? 0) : 0;
+      case 'reflection': return e.port === cfg.colorPort ? s.reflect : 0;
       case 'distance': return e.port !== cfg.distPort ? -1 : s.dist === null ? 200 : Math.round(s.dist * 10) / 10;
       case 'angle': return e.axis === 'yaw' ? Math.round(s.yaw) : 0;
       case 'timer': return Math.round((this.t - this.timer0) * 1000) / 1000;
@@ -916,7 +919,8 @@ function mathop(fn, x) {
     default: return 0;
   }
 }
-// What the simulated color sensor reports. Reflected light values are rough guesses for the mat.
+// What the simulated color sensor reports. Reflected light values are rough guesses for the plain mat;
+// on the mat photo they come from the photo (mat-photo.js).
 const COLOR_ID = { black: 0, violet: 1, blue: 3, azure: 4, green: 6, yellow: 7, red: 9, white: 10, none: -1 };
 const REFLECT = { black: 8, white: 98, red: 60, blue: 30, green: 25, yellow: 85, none: 0 };
 
