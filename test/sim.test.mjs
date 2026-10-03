@@ -695,3 +695,14 @@ test('M15: hook and pull the skylight, lift the canopy; the bonus follows the do
   onMine.mission.m15a = true; onMine.runMechanisms(0.01);
   assert.equal(onMine.mission.m15d, true);
 });
+
+test('M12: hook the support tie on the tree and pull it onto the post', () => {
+  const arm = { id: 'a1', port: 'E', motion: 'lift', x: 0, y: 100, dir: 'front', len: 90, rest: 'up', cw: 'lowers', ratio: 1 };
+  const run = (back) => {
+    const s = new Sim({ arms: [arm] }, { x: 1800, y: 712, h: 90 }, []);
+    runToEnd(s, prog([['motor', { port: 'E', dir: 'clockwise', val: '90', unit: 'degrees' }], ['move', { dir: 'back', val: String(back), unit: 'cm' }]]));
+    return s;
+  };
+  assert.equal(run(10).mission.m12b, true);
+  assert.notEqual(run(2).mission.m12b, true, 'not pulled far enough');
+});

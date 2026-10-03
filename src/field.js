@@ -28,7 +28,10 @@ export const MODELS = [
   { key: 'm07', n: '07', name: 'M07 Humongous Fungus', x: 1582, y: 1072, w: 79, h: 120, r: 0 },
   { key: 'm11', n: '11', name: 'M11 Window to the Past', x: 1406, y: 594, w: 80, h: 80, r: 45 },
   { key: 'm12', n: '12', name: 'M12 Forest Elder', x: 1940, y: 758, w: 73, h: 73, r: 0, round: true },
-  { key: 'm12post', n: '12', name: 'M12 Forest Elder post', x: 1940, y: 538, w: 25, h: 45, r: 0 },
+  // The post is a few inches south of the tree (coach's note); the support tie (ring) starts hanging on the tree's
+  // south side, to be hooked and pulled south over the post.
+  { key: 'm12post', n: '12', name: 'M12 Forest Elder post', x: 1940, y: 655, w: 25, h: 45, r: 0 },
+  { key: 'm12tie', n: '', name: 'M12 support tie (ring on the tree)', x: 1940, y: 712, w: 50, h: 14, r: 0 },
   // The cane lies flat on the mat, hinged at the bottom of the tree and pointing away from home.
   // under: a low lift arm can slide beneath it.
   { key: 'm12cane', n: '', name: 'M12 cane (hinged at the tree, lying on the mat)', x: 1940, y: 875, w: 18, h: 160, r: 0, under: true }
@@ -122,6 +125,7 @@ export const MECHANISMS = [
   { id: 'm10-spider', model: 'm10spider', how: 'touch', clears: ['m10a'], says: 'M10: the spider habitat was disturbed.' },
   { id: 'm10-snail', model: 'm10snail', how: 'touch', clears: ['m10b'], says: 'M10: the snail habitat was disturbed.' },
   { id: 'm11-cover', model: 'm11', how: 'push', sets: ['m11'], says: 'M11: the root cover is down.' },
+  { id: 'm12-tie', model: 'm12tie', how: 'pull', pull: 40, sets: ['m12b'], says: 'M12: the support tie is around the post.' },
   { id: 'm12-cane', model: 'm12cane', how: 'lift', fast: 70, lifts: 'm12cane', sets: ['m12a'], says: 'M12: the cane flipped up against the tree.' },
   { id: 'm15-canopy', dock: 'M15', how: 'lift', sets: ['m15a'], says: 'M15: the nesting canopy is raised.' },
   { id: 'm15-skylight', dock: 'M15', how: 'pull', pull: 40, sets: ['m15b'], says: 'M15: the garden skylight is pulled completely in.' },
@@ -129,7 +133,7 @@ export const MECHANISMS = [
 ];
 // Score items the simulation can fill in. M10 starts complete and is lost when touched; M06 counts leaf fragments;
 // M02, M13 and M14 are counted from where seeds and the keystone species end up; M15's bonus from which dock it sits on.
-export const AUTO_KEYS = ['m01a', 'm01b', 'm02', 'm03a', 'm03b', 'm04a', 'm04b', 'm04x', 'm05a', 'm05b', 'm06', 'm07a', 'm08', 'm09a', 'm09b', 'm09c', 'm10a', 'm10b', 'm11', 'm12a', 'm13', 'm14a', 'm15a', 'm15b', 'm15c', 'm15d'];
+export const AUTO_KEYS = ['m01a', 'm01b', 'm02', 'm03a', 'm03b', 'm04a', 'm04b', 'm04x', 'm05a', 'm05b', 'm06', 'm07a', 'm08', 'm09a', 'm09b', 'm09c', 'm10a', 'm10b', 'm11', 'm12a', 'm12b', 'm13', 'm14a', 'm15a', 'm15b', 'm15c', 'm15d'];
 // M15's environmental bonus: the item each dock needs most.
 export const DOCK_NEED = { mine: 'm15a', city: 'm15b', farm: 'm15c' };
 
