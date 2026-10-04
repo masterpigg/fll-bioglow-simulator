@@ -198,3 +198,47 @@ h1 { margin: 4px 0 0; font-size: 28px; line-height: 1.1; }
 .line.docks { flex-wrap: wrap; }
 .line.docks label { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-2); }
 .line.docks select { min-height: 32px; border-radius: 6px; border: 1px solid var(--line-2); background: var(--bg); color: var(--text); }
+
+/* ---------- phone: one view at a time, swipe (or tap Code / Table) to flip ---------- */
+.views { display: none; }
+.blocks-toggle { display: none; }
+.phone body { height: 100vh; height: 100dvh; padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+.phone .top { flex-wrap: nowrap; align-items: center; gap: 8px; margin: 0; padding: 8px 12px; padding-top: max(8px, env(safe-area-inset-top)); }
+.phone .eyebrow, .phone .lbl { display: none; }
+.phone h1 { margin: 0; font-size: 17px; }
+.phone .top .row { flex-wrap: nowrap; gap: 6px; }
+.phone .top .btn { padding: 0 11px; }
+.phone .msg { margin: 0 12px 8px; }
+.phone .views { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 0 12px 8px; padding: 4px; border-radius: 12px; background: var(--panel); touch-action: pan-y; }
+.phone .views button { min-height: 40px; border: none; border-radius: 9px; font-weight: 700; font-size: 15px; cursor: pointer; background: transparent; color: var(--text-2); }
+.phone .views button[aria-pressed="true"] { background: var(--accent); color: var(--bg); }
+.phone .app { flex: 1; min-height: 0; display: flex; gap: 0; max-width: none; margin: 0; overflow: hidden; }
+.phone .app > section {
+  flex: 0 0 100%; min-width: 0; height: 100%; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
+  transform: translateX(calc(var(--view, 0) * -100% + var(--drag, 0px))); transition: transform .25s ease;
+}
+.phone .app.dragging > section { transition: none; }
+.phone .panel { max-height: none; border: 0; border-radius: 0; padding: 0 12px 12px; background: transparent; }
+.phone .field-col { order: 0; padding: 0 12px calc(12px + env(safe-area-inset-bottom)); }
+.phone .foot { margin: 8px 0 0; }
+.phone #tab-code:not([hidden]) { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.phone .blockly-wrap { flex: 1; min-height: 180px; }
+.phone #blockly { height: 100%; min-height: 0; }
+.phone #tab-code > .fine { display: none; }
+.phone .toolbar .btn { padding: 0 12px; }
+.phone .tabs button { font-size: 13px; }
+.blockly-wrap { position: relative; }
+.phone .blocks-toggle {
+  display: inline-flex; align-items: center; gap: 6px; position: absolute; z-index: 80; left: 8px; top: 8px;
+  min-height: 44px; padding: 0 14px; border-radius: 22px; border: 1px solid #C6CBD1; background: #FFFFFF; color: #2B3530;
+  font-weight: 700; font-size: 14px; cursor: pointer; box-shadow: 0 2px 8px rgba(0, 0, 0, .18);
+}
+.phone .blocks-toggle[aria-expanded="true"] { top: auto; bottom: 8px; }
+/* Phone turned sideways: the Code / Table switch moves up next to the title to save height. */
+@media (max-height: 500px) {
+  .phone body { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto minmax(0, 1fr); }
+  .phone .top { grid-row: 1; grid-column: 1; }
+  .phone .views { grid-row: 1; grid-column: 2; width: 240px; margin: 8px 12px 8px 0; align-self: center; }
+  .phone .msg { grid-row: 2; grid-column: 1 / -1; }
+  .phone .app { grid-row: 3; grid-column: 1 / -1; }
+}

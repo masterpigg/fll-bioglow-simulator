@@ -1,7 +1,7 @@
 import { FW, FH, HOME_R, LINES, MISSIONS, TOKEN_PTS, missionPoints, totalScore, DOCKS, DEFAULT_DOCKS, AUTO_KEYS, MECHANISMS, APPROACH, DEFAULT_APPROACH } from './field.js';
 import { PORTS, PAIRS, DEMO, flatToAst, emptyProgram } from './blocks.js';
 import { programToJson, jsonToProgram } from './blocks-json.js';
-import { createWorkspace, registerNames } from './workspace.js';
+import { createWorkspace, registerNames, foldingToolbox } from './workspace.js';
 import { Sim, normalizeConfig, LOOSE_DEFAULTS, inside, calibrateWheel, calibrateTrack, calibrateTop } from './sim.js';
 import { drawRobot } from './robot-view.js';
 import { photoSampler } from './mat-photo.js';
@@ -394,7 +394,7 @@ $('side').addEventListener('click', (e) => {
 
 // ---------- code tab (drag-and-drop blocks) ----------
 
-let ws = null, lastLit = new Set(), loadingWs = false;
+let ws = null, toolbox = null, lastLit = new Set(), loadingWs = false;
 
 // Show a program in the block editor (after an import, the demo, or Clear).
 function showProgram(program) {
@@ -428,7 +428,7 @@ function initCode() {
       <span class="muted" id="code-status"></span>
       <div class="row"><button type="button" class="ghost" data-act="demo">Demo</button><button type="button" class="ghost" data-act="clear">Clear</button></div>
     </div>
-    <div id="blockly"></div>
+    <div class="blockly-wrap"><div id="blockly"></div><button type="button" class="blocks-toggle" id="blocks-toggle" aria-expanded="false">+ Blocks</button></div>
     <div class="fine">Drag blocks out of the menu and snap them under “when program starts”. Drag a block back to the menu to delete it.</div>`;
   try { ws = createWorkspace($('blockly')); }
   catch (err) { $('blockly').innerHTML = `<div class="empty">${esc(err.message)}</div>`; return; }
@@ -440,6 +440,14 @@ function initCode() {
   }
   if (loaded) syncProgram(); else showProgram(state.program);
   ws.addChangeListener((e) => { if (!e.isUiEvent && !loadingWs) syncProgram(); });
+  // The editor fills whatever space its box gets (window size, phone layout, screen turned).
+  new ResizeObserver(() => window.Blockly.svgResize(ws)).observe($('blockly'));
+  toolbox = foldingToolbox(ws, (shown) => {
+    $('blocks-toggle').setAttribute('aria-expanded', String(shown));
+    $('blocks-toggle').textContent = shown ? 'Done' : '+ Blocks';
+  });
+  toolbox.setFolding(isPhone());
+  $('blocks-toggle').onclick = () => toolbox.toggle();
 }
 
 $('tab-code').addEventListener('click', (e) => {
@@ -746,6 +754,68 @@ document.querySelector('.tabs').addEventListener('click', (e) => {
   for (const t of ['code', 'score', 'robot', 'field']) $('tab-' + t).hidden = t !== state.tab;
   if (state.tab === 'code' && ws) window.Blockly.svgResize(ws);
 });
+
+// ---------- phone: one view at a time ----------
+// The code (left) and the table (right) sit side by side, one screen wide each. Swipe sideways
+// anywhere except on the block editor, the mat and the robot drawing (they use drags themselves),
+// or tap Code / Table.
+
+const isPhone = () => document.documentElement.classList.contains('phone');
+const appEl = document.querySelector('.app'), views = [document.querySelector('.panel'), document.querySelector('.field-col')];
+let view = 0;
+function setView(v) {
+  view = v;
+  appEl.style.setProperty('--view', v);
+  document.querySelectorAll('.views [data-view]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.view === v)));
+  views.forEach((el, i) => { el.inert = isPhone() && i !== v; });
+}
+function layoutChanged() {
+  // The footer note goes at the end of the table view on a phone, under the page otherwise.
+  const foot = document.querySelector('.foot');
+  if (isPhone()) views[1].append(foot); else document.body.insertBefore(foot, document.querySelector('body > script'));
+  setView(view);
+  if (toolbox) toolbox.setFolding(isPhone());
+}
+window.addEventListener('phonechange', layoutChanged);
+layoutChanged();
+document.querySelector('.views').addEventListener('click', (e) => { const b = e.target.closest('[data-view]'); if (b) setView(+b.dataset.view); });
+
+let swipe = null;
+const NO_SWIPE = '#blockly, #field, #robot-editor, input, select, textarea, dialog, .blocklyWidgetDiv, .blocklyDropDownDiv';
+document.addEventListener('pointerdown', (e) => {
+  swipe = null;
+  if (!isPhone() || !e.isPrimary || e.pointerType === 'mouse' || e.target.closest(NO_SWIPE)) return;
+  swipe = { id: e.pointerId, x: e.clientX, y: e.clientY, t: e.timeStamp, on: false, dx: 0 };
+});
+document.addEventListener('pointermove', (e) => {
+  if (!swipe || e.pointerId !== swipe.id) return;
+  const dx = e.clientX - swipe.x, dy = e.clientY - swipe.y;
+  if (!swipe.on) {
+    if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { swipe = null; return; } // scrolling
+    if (Math.abs(dx) < 12 || Math.abs(dx) < 1.5 * Math.abs(dy)) return;
+    swipe.on = true; appEl.classList.add('dragging');
+  }
+  // Follow the finger; past either end it only gives a little.
+  swipe.dx = (view === 0 && dx > 0) || (view === 1 && dx < 0) ? dx / 4 : dx;
+  appEl.style.setProperty('--drag', swipe.dx + 'px');
+});
+function endSwipe(e) {
+  if (!swipe || e.pointerId !== swipe.id) return;
+  const s = swipe; swipe = null;
+  if (!s.on) return;
+  appEl.classList.remove('dragging');
+  appEl.style.setProperty('--drag', '0px');
+  if (e.type === 'pointercancel') return;
+  const fast = Math.abs(s.dx) / Math.max(1, e.timeStamp - s.t) > 0.4;
+  if ((s.dx < -innerWidth / 4 || (fast && s.dx < -30)) && view === 0) setView(1);
+  else if ((s.dx > innerWidth / 4 || (fast && s.dx > 30)) && view === 1) setView(0);
+  // A swipe that started on a button is not a tap on it.
+  addEventListener('click', swallowClick, true);
+  setTimeout(() => removeEventListener('click', swallowClick, true), 400);
+}
+function swallowClick(e) { e.stopPropagation(); e.preventDefault(); removeEventListener('click', swallowClick, true); }
+document.addEventListener('pointerup', endSwipe);
+document.addEventListener('pointercancel', endSwipe);
 
 // Read the blocks right before running/exporting, so the newest edits always count.
 const latestProgram = () => { if (ws) syncProgram(); return state.program; };

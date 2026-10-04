@@ -237,6 +237,36 @@ function makeBlock(ws) {
   const tb = ws.getToolbox(); if (tb) tb.refreshSelection();
 }
 
+// On a phone held upright the category menu takes a big share of the screen, so it folds away:
+// it opens from a button and folds again once a block has been dragged out or the workspace is
+// tapped. `onChange(shown)` keeps the button in step.
+export function foldingToolbox(ws, onChange) {
+  const B = window.Blockly, tb = ws.getToolbox();
+  let folding = false, shown = true, foldAfterDrag = false;
+  const show = (on) => {
+    if (!tb || on === shown) return;
+    // Keep the blocks still on screen while the menu strip on the left appears or goes.
+    const left = () => ws.getMetricsManager().getAbsoluteMetrics().left;
+    const x = ws.scrollX + left(), y = ws.scrollY;
+    shown = on;
+    tb.setVisible(on);
+    B.svgResize(ws);
+    ws.scroll(x - left(), y);
+    onChange(on);
+  };
+  const fold = () => { if (folding && shown) { if (ws.isDragging()) foldAfterDrag = true; else show(false); } };
+  ws.addChangeListener((e) => {
+    if (!folding) return;
+    if (e.type === B.Events.TOOLBOX_ITEM_SELECT && !e.newItem && e.oldItem) fold();
+    else if (e.type === B.Events.CLICK && e.targetType === 'workspace') fold();
+    else if (e.type === B.Events.BLOCK_DRAG && !e.isStart && foldAfterDrag) { foldAfterDrag = false; setTimeout(fold); }
+  });
+  return {
+    toggle() { if (shown) { tb.clearSelection(); show(false); } else show(true); },
+    setFolding(on) { folding = on; foldAfterDrag = false; if (!on) show(true); else if (shown) { tb.clearSelection(); show(false); } }
+  };
+}
+
 let defined = false;
 export function createWorkspace(container) {
   const B = window.Blockly;
